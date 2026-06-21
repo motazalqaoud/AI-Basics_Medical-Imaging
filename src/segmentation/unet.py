@@ -62,19 +62,28 @@ class Down(nn.Module):
 
 
 class Up(nn.Module):
-    """Upsampling → concatenate skip connection → DoubleConv."""
+    """Upsampling → concatenate skip connection → DoubleConv.
 
-    def __init__(self, in_channels: int, out_channels: int,
+    Args:
+        in_channels:   channels of the incoming (deeper) feature map x1
+        skip_channels: channels of the skip-connection feature map x2
+        out_channels:  channels produced by this block
+    """
+
+    def __init__(self, in_channels: int, skip_channels: int, out_channels: int,
                  bilinear: bool = True, dropout: float = 0.0):
         super().__init__()
         if bilinear:
+            # Upsample keeps channel count, so conv sees in_channels + skip_channels
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConv(in_channels, out_channels,
-                                   mid_channels=in_channels // 2, dropout=dropout)
+            self.conv = DoubleConv(in_channels + skip_channels, out_channels,
+                                   dropout=dropout)
         else:
+            # Transposed conv halves the channels of x1
             self.up = nn.ConvTranspose2d(in_channels, in_channels // 2,
                                           kernel_size=2, stride=2)
-            self.conv = DoubleConv(in_channels, out_channels, dropout=dropout)
+            self.conv = DoubleConv(in_channels // 2 + skip_channels, out_channels,
+                                   dropout=dropout)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -147,15 +156,15 @@ class UNet(nn.Module):
             encoder_channels.append(f_out)
             f = f_out
 
-        # Build decoder
-        factor = 2 if bilinear else 1
+        # Build decoder — track the actual channel count flowing through.
+        prev_ch = encoder_channels[-1]            # bottleneck output channels
         for i in range(depth):
-            f_in = encoder_channels[-(i+1)]
-            f_skip = encoder_channels[-(i+2)]
-            f_out = f_skip // factor if i < depth - 1 else f_skip
-            self.ups.append(Up(f_in + f_skip, f_out, bilinear, dropout=0.0))
+            skip_ch = encoder_channels[-(i + 2)]  # matching encoder skip
+            out_ch = skip_ch
+            self.ups.append(Up(prev_ch, skip_ch, out_ch, bilinear, dropout=0.0))
+            prev_ch = out_ch
 
-        self.outc = OutConv(f_out, n_classes)
+        self.outc = OutConv(prev_ch, n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Encoder path
