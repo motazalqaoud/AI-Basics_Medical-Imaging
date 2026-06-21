@@ -1,6 +1,6 @@
 # 🧠 Medical Imaging AI Basics
 
-> A practical, clinical-grade toolkit for AI in medical imaging — built by a biomedical engineer who has actually worked in the OR.
+> A practical, clinical-grade toolkit for AI in medical imaging.
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red)](https://pytorch.org)
