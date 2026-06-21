@@ -123,24 +123,12 @@ jupyter notebook notebooks/
 ## 🧑‍💻 About the Author
 
 **Motaz Alqaoud, PhD**
-Senior AI/ML Engineer @ Abbott | Biomedical Engineer
 
 - PhD in Biomedical Engineering — dissertation on real-time breast cancer surgery navigation using AI + FEA
 - Experience in surgical navigation, medical device ML, MRI/US registration
 - GitHub: [@motazalqaoud](https://github.com/motazalqaoud)
 - LinkedIn: [linkedin.com/in/motazalqaoud](https://linkedin.com/in/motazalqaoud)
 
----
-
-## 🗺️ Roadmap
-
-- [x] DICOM/NIfTI loading
-- [x] Preprocessing pipeline
-- [x] U-Net segmentation
-- [ ] MRI → Ultrasound registration
-- [ ] Biomechanical deformation modeling (FEA-based)
-- [ ] Real-time inference pipeline
-- [ ] Hugging Face Space demo
 
 ---
 
