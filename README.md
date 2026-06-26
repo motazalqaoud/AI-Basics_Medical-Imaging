@@ -214,6 +214,23 @@ See `docs/clinical_context.md` for the full explanation.
 
 ---
 
+## Roadmap
+
+- [x] Load brain tumor MRI dataset (Kaggle 12K)
+- [x] Preprocessing pipeline for T1/T2 weighted images
+- [x] 2D U-Net segmentation with binary tumor mask
+- [x] 3D Attention U-Net with multi-class output
+- [x] Hybrid loss (Weighted Dice + Focal + Boundary)
+- [x] Kaggle dataset loader with train/val/test split
+- [x] 3D visualization and training curve plots
+- [ ] Evaluate on full Kaggle test set with per-class metrics
+- [ ] BraTS integration and cross-dataset validation
+- [ ] Web interface for tumor detection (Gradio)
+- [ ] ONNX export for deployment
+- [ ] PACS integration (DICOM output)
+
+---
+
 ## License
 
 MIT License — use freely, attribution appreciated.
