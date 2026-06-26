@@ -1,93 +1,75 @@
-# Clinical Context: Why These Choices Matter
+# Clinical Context: Engineering Decisions for Brain Tumor MRI
 
-> Written by Motaz Alqaoud, PhD — Biomedical Engineer
+> Motaz Alqaoud, PhD — Biomedical Engineer
 
-Most medical AI tutorials are written by software engineers who've never been inside an OR.
-This document explains the *why* behind the engineering decisions in this repo.
-
----
-
-## 1. Voxel Spacing is Not Optional
-
-Every medical image has a **physical spacing** — the real-world size (in mm) of each voxel.
-
-A 256×256 image from one MRI scanner might represent a 25cm × 25cm field of view.
-The same resolution from another scanner might be 18cm × 18cm.
-
-**If you ignore spacing:**
-- A tumor you measure as 2cm is actually 1.4cm
-- Your model trained on scanner A fails completely on scanner B
-- Your surgical margin calculation is wrong
-
-**This is why** all preprocessing in this repo resamples to isotropic spacing before any analysis.
+The gap between an ML benchmark and a useful clinical tool is mostly engineering, not model architecture. This document covers the decisions in this repo that come from clinical constraints — not from best-practices articles.
 
 ---
 
-## 2. Anatomy-Aware Augmentation
+## 1. Voxel Spacing
 
-Standard computer vision augmentation tutorials tell you to:
-- Randomly flip horizontally ✓ (fine for dogs vs cats)
-- Randomly rotate 90° ✓ (fine for texture classification)
-- Aggressive color jitter ✓ (fine for natural images)
+MRI scanners do not produce standardized images. Two T1-weighted brain scans from different sites can have voxel sizes of 1×1×1 mm and 0.9×0.9×3 mm respectively — the same physical tumor looks geometrically different in each.
 
-In medical imaging:
-- **Horizontal flip** of a chest X-ray swaps the heart to the wrong side
-- **90° rotation** of a brain MRI produces an anatomically impossible orientation — your model has never seen this and will fail
-- **Aggressive intensity changes** destroy the clinical meaning of signal (T1 vs T2 MRI have specific intensity ranges)
+This matters for brain tumors specifically because tumor volume feeds into treatment decisions. A glioma measured at 3 cm³ vs 4.5 cm³ has different implications for radiation planning. If your model was trained on 1 mm isotropic data and runs on 3 mm slice-thickness acquisitions, its spatial measurements are off by a factor proportional to that spacing difference.
 
-**This is why** this repo uses small rotations (≤15°), controlled intensity shifts, and no left-right flips on asymmetric anatomy.
+Resampling to isotropic spacing before any processing is not optional. It happens in `nifti_loader.py` before normalization or augmentation, so the model always operates in a consistent physical coordinate system.
 
 ---
 
-## 3. Dice Loss, Not Cross-Entropy
+## 2. Augmentation Has Anatomy Constraints
 
-In a typical brain MRI slice, a tumor might occupy **0.5% of all pixels**.
+The brain is approximately bilaterally symmetric, which makes horizontal flipping look like a safe augmentation. It isn't.
 
-If you train with cross-entropy:
-- Predicting "background" for every pixel gets you **99.5% accuracy**
-- Your model never learns to find tumors
-- You get a useless model that looks great on metrics
+Tumor location is a clinical feature. Left temporal lobe involvement affects language function. Right vs left frontal gliomas carry different surgical risk profiles. A model trained with random horizontal flips learns that tumor laterality is arbitrary — and it isn't, either for diagnosis or for treatment planning.
 
-**Dice loss** directly optimizes overlap between prediction and ground truth.
-It doesn't care about the 99.5% background — it cares about whether you found the lesion.
+90° rotations are similarly problematic. MRI is acquired in defined orientations (axial, sagittal, coronal). A 90° rotation doesn't produce another valid brain MRI — it produces something a radiologist would never see in clinical practice. Models trained on these tend to fail when they encounter real protocol-conformant images from scanners they haven't seen.
 
-**This is why** clinical AI almost always uses Dice or a Dice+BCE combination.
+What is safe: rotations within ±15°, small translations, mild intensity shifts within the T1 or T2 range. The augmentation in `transforms.py` stays within these constraints.
 
 ---
 
-## 4. The Affine Matrix in NIfTI
+## 3. Loss Function Design for Class Imbalance
 
-NIfTI files contain a 4×4 **affine matrix** that maps from voxel indices to real-world coordinates.
+Brain tumor pixels make up roughly 0.5–3% of a typical MRI slice, depending on tumor type and slice position. Cross-entropy optimizes for pixel count, so it naturally learns to predict background. A model that does exactly that achieves 97%+ pixel accuracy and no clinical value. This is the default behavior of vanilla cross-entropy on medical segmentation tasks — not a hypothetical edge case.
 
-In surgical navigation, you need to know: *"This tumor centroid is at voxel (128, 95, 67). Where is that in the OR?"*
+Multi-class segmentation makes this worse. Background dominates, followed by normal brain parenchyma, then the tumor classes themselves — and within tumor classes, glioma is more common than pituitary, which is more common than meningioma in this dataset. A flat Dice weighting treats all classes equally; `WeightedDiceLoss` assigns higher weight to rarer classes to prevent them from collapsing during training.
 
-The affine matrix answers that question. Without it, you cannot:
-- Register pre-op MRI to intra-op ultrasound
-- Guide a surgical tool to the correct location
-- Compute real-world margins
+The hybrid loss here combines three terms for three distinct failure modes:
+- **Dice** — handles class imbalance at the segment level
+- **Focal** — up-weights hard-to-classify pixels that Dice treats equally
+- **Boundary** — penalizes imprecise tumor edges, which matter for volumetric accuracy
 
-**This is why** the NIfTI loader in this repo always preserves and exposes the affine.
+Per-class Dice is tracked separately during training because overall Dice can look acceptable while one class quietly collapses to zero.
 
 ---
 
-## 5. The 3-Plane Rule
+## 4. Multi-Class Segmentation and WHO Grading
 
-Radiologists and surgeons never look at a single 2D slice.
+Glioma, meningioma, and pituitary adenoma are not interchangeable findings.
 
-A finding that is ambiguous in the axial plane may be obvious in the sagittal or coronal plane.
-A fake "lesion" (artifact) in one plane often disappears in the others.
+Gliomas are graded I–IV under WHO classification. Grade IV glioblastoma has a median survival of roughly 15 months with aggressive treatment. Grade I pilocytic astrocytomas are largely curable. Meningiomas are mostly benign (WHO grade I) and often managed with observation rather than intervention. Pituitary adenomas are frequently treated hormonally, without resection.
 
-**This is why** the visualization tools always show all 3 anatomical planes.
+Collapsing these into a binary "tumor vs background" model produces something that detects mass but cannot contribute to clinical decision-making. Differentiating the tumor type — even with the uncertainty that a 2D imaging model carries — is the signal that makes segmentation clinically relevant.
+
+This is reflected in the 4-class output (background + glioma + meningioma + pituitary) and why per-class Dice is the primary evaluation metric rather than mean Dice across all classes.
+
+---
+
+## 5. Reading in Three Planes
+
+Neuroradiologists do not interpret a single axial slice in isolation. A finding that is ambiguous in the axial plane is often definitive in the sagittal or coronal view. Artifacts that mimic lesions in one plane commonly disappear in the others.
+
+A model trained purely on axial slices and evaluated only on axial predictions is not fully validated — the other two planes are untested. The 3-plane viewer in `src/visualization/viewer.py` exists for this reason: any segmentation worth reporting should hold up in all three orientations before it influences a downstream decision.
 
 ---
 
 ## Further Reading
 
-- [MONAI: Medical Open Network for AI](https://monai.io)
-- [3D Slicer](https://www.slicer.org) — open source surgical navigation platform
-- [The Medical Segmentation Decathlon](http://medicaldecathlon.com) — benchmark datasets
-- Ronneberger et al. (2015) — U-Net paper
+- [The Medical Segmentation Decathlon](http://medicaldecathlon.com) — multi-organ and tumor segmentation benchmarks
+- [BraTS Challenge](https://www.synapse.org/brats) — the standard brain tumor segmentation benchmark dataset
+- Ronneberger et al. (2015) — [U-Net: Convolutional Networks for Biomedical Image Segmentation](https://arxiv.org/abs/1505.04597)
+- Menze et al. (2015) — [The Multimodal Brain Tumor Image Segmentation Benchmark (BraTS)](https://ieeexplore.ieee.org/document/6975210)
 
 ---
 
-*Questions? Connect with me on [LinkedIn](https://linkedin.com/in/motazalqaoud) or open a GitHub issue.*
+*Questions or corrections — open a GitHub issue or reach out on [LinkedIn](https://linkedin.com/in/motazalqaoud).*
