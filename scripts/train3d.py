@@ -48,6 +48,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Pseudo-3D depth: number of frames stacked from each 2D slice.
+# Increase on GPU with more VRAM (e.g. 8 or 16); 4 is safe on CPU / 8GB RAM.
+D_FRAMES = 2
+
 
 def resolve_data_root(root_dir: str) -> str:
     """Normalize the dataset root path and support nested Images_ directories."""
@@ -110,9 +114,8 @@ def train_epoch(model, loader, criterion, optimizer, device):
         masks = batch['mask'].to(device)    # (B, H, W)
         
         # Convert 2D to 3D by stacking frames (pseudo-3D)
-        # Create (B, 1, 8, H, W) by repeating slices
-        images = images.unsqueeze(2).repeat(1, 1, 8, 1, 1)
-        masks = masks.unsqueeze(1).repeat(1, 8, 1, 1)
+        images = images.unsqueeze(2).repeat(1, 1, D_FRAMES, 1, 1)
+        masks = masks.unsqueeze(1).repeat(1, D_FRAMES, 1, 1)
         
         # Forward pass
         optimizer.zero_grad()
@@ -145,8 +148,8 @@ def validate(model, loader, criterion, device, num_classes=4):
             masks = batch['mask'].to(device)    # (B, H, W)
 
             # Convert 2D to 3D
-            images = images.unsqueeze(2).repeat(1, 1, 8, 1, 1)
-            masks = masks.unsqueeze(1).repeat(1, 8, 1, 1)
+            images = images.unsqueeze(2).repeat(1, 1, D_FRAMES, 1, 1)
+            masks = masks.unsqueeze(1).repeat(1, D_FRAMES, 1, 1)
             
             logits = model(images)
             loss = criterion(logits, masks)
@@ -306,6 +309,17 @@ def main():
             }, ckpt_path)
             logger.info(f"✓ Saved best checkpoint: {ckpt_path}")
         
+        # Save latest checkpoint every epoch (safe resume point after any shutdown)
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'val_dice': val_dice,
+            'val_loss': val_loss,
+            'train_loss': train_loss,
+        }, ckpt_dir / 'checkpoint_latest.pt')
+        logger.info(f"✓ Saved latest checkpoint (epoch {epoch})")
+
         # Save periodic checkpoint
         if epoch % 10 == 0:
             ckpt_path = ckpt_dir / f'checkpoint_epoch_{epoch}.pt'
@@ -326,15 +340,16 @@ def main():
                     images = val_batch['image'].to(device)   # (B, 1, H, W)
                     masks = val_batch['mask'].to(device)     # (B, H, W)
                     # Same 2D->pseudo-3D conversion used in train_epoch/validate
-                    images_3d = images.unsqueeze(2).repeat(1, 1, 8, 1, 1)
+                    images_3d = images.unsqueeze(2).repeat(1, 1, D_FRAMES, 1, 1)
                     logits = model(images_3d)
-                    preds = torch.argmax(logits, dim=1)      # (B, 8, H, W)
+                    preds = torch.argmax(logits, dim=1)      # (B, D_FRAMES, H, W)
 
                 # Use original 2D image + middle slice of the pseudo-volume prediction
+                mid = D_FRAMES // 2
                 for i in range(min(2, len(images))):
                     img_np = images[i, 0].cpu().numpy()      # (H, W)
                     mask_np = masks[i].cpu().numpy()         # (H, W)
-                    pred_np = preds[i, 4].cpu().numpy()      # middle slice of depth-8
+                    pred_np = preds[i, mid].cpu().numpy()    # middle slice
                     
                     # Normalize image
                     img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min() + 1e-8)

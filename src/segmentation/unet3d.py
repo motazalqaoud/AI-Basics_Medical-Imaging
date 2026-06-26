@@ -162,10 +162,11 @@ class Conv3DBlock(nn.Module):
 
 class Down3D(nn.Module):
     """Downsampling: MaxPool3D → Conv3DBlock."""
-    
+
     def __init__(self, in_channels: int, out_channels: int, dropout: float = 0.0):
         super().__init__()
-        self.maxpool = nn.MaxPool3d(kernel_size=2, stride=2)
+        # Pool only H and W; preserve D so pseudo-3D inputs (small D) don't collapse.
+        self.maxpool = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2))
         self.conv = Conv3DBlock(in_channels, out_channels, dropout=dropout)
     
     def forward(self, x):
@@ -179,7 +180,8 @@ class Up3D(nn.Module):
     def __init__(self, in_channels: int, skip_channels: int, out_channels: int,
                  use_attention_gate: bool = True):
         super().__init__()
-        self.up = nn.ConvTranspose3d(in_channels, in_channels // 2, kernel_size=2, stride=2)
+        # Upsample only H and W to match the anisotropic downsampling in Down3D.
+        self.up = nn.ConvTranspose3d(in_channels, in_channels // 2, kernel_size=(1, 2, 2), stride=(1, 2, 2))
         
         # Attention gate for skip connection
         if use_attention_gate:
