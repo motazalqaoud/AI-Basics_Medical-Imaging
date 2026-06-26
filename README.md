@@ -67,7 +67,7 @@ Brain-Tumor-Segmentation/
 │   └── samples/                     # Synthetic NIfTI pairs (Option A)
 │
 ├── docs/
-│   └── design_decisions.md       # Why standard ML assumptions break on MRI data
+│   └── design_decisions.md       # Why standard DL assumptions break on MRI data
 │
 ├── run.py                           # Single entry point: setup / train / predict / results
 ├── pyproject.toml
