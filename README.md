@@ -9,22 +9,25 @@
 
 ---
 
-## Who is this for?
+## What is this about?
 
-This repo is for:
-- Engineers building **brain tumor detection systems** with production-ready code
-- Researchers training **segmentation models on real MRI data** (12K+ images from Kaggle)
-- Medical professionals developing **diagnostic support tools** for neuroradiology
-- Anyone deploying AI for **surgical planning and intraoperative guidance**
+This project implements a **clinical-grade pipeline for brain tumor segmentation from MRI**, covering the full stack from raw DICOM/NIfTI loading through 3D volumetric training to multi-class prediction.
 
-This is **not** a toy tutorial. Every component reflects real clinical workflows from neurosurgery and radiology departments.
+**Key capabilities:**
+- Multi-class tumor segmentation: glioma, meningioma, and pituitary (WHO classification)
+- 3D Attention U-Net trained on 12,000+ real MRI scans from Kaggle
+- Anatomy-aware preprocessing: isotropic resampling, percentile normalization, safe augmentation
+- Hybrid loss (Weighted Dice + Focal + Boundary) designed for severe class imbalance
+- Per-class Dice and Hausdorff metrics for quantitative evaluation
+
+Every engineering decision is driven by clinical requirements — voxel spacing, orientation metadata, and correct intensity handling are treated as first-class concerns, not afterthoughts.
 
 ---
 
 ## Repository Structure
 
 ```
-medical-imaging-ai-basics/
+Brain-Tumor-Segmentation/
 │
 ├── notebooks/
 │   ├── 01_load_visualize_medical_images.ipynb   # DICOM & NIfTI loading, 3D viz
@@ -70,8 +73,8 @@ medical-imaging-ai-basics/
 ## Quickstart
 
 ```bash
-git clone https://github.com/motazalqaoud/AI-Basics_Medical-Imaging.git
-cd AI-Basics_Medical-Imaging
+git clone https://github.com/motazalqaoud/Brain-Tumor-Segmentation.git
+cd Brain-Tumor-Segmentation
 pip install -r requirements.txt
 ```
 
@@ -207,8 +210,8 @@ See `docs/clinical_context.md` for the full explanation.
 
 **Motaz Alqaoud, PhD**
 
-- PhD in Biomedical Engineering — dissertation on real-time breast cancer surgery navigation using AI + FEA
-- Experience in surgical navigation, medical device ML, MRI/US registration
+- PhD in Biomedical Engineering with focus on medical image analysis and deep learning
+- Senior AI/ML Engineer specializing in medical imaging, segmentation models, and clinical AI systems
 - GitHub: [@motazalqaoud](https://github.com/motazalqaoud)
 - LinkedIn: [linkedin.com/in/motazalqaoud](https://linkedin.com/in/motazalqaoud)
 
