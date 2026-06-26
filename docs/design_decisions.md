@@ -1,4 +1,4 @@
-# Why Medical Imaging Breaks Standard ML Assumptions
+# Why Medical Imaging Breaks Standard DL Assumptions
 
 > Motaz Alqaoud, PhD — Biomedical Engineer
 
