@@ -50,8 +50,10 @@ Brain-Tumor-Segmentation/
 │       └── visualizer3d.py          # Segmentation comparison & training curve plots
 │
 ├── scripts/
+│   ├── train.py                     # Train 2D U-Net on Kaggle dataset (simpler entry point)
 │   ├── train3d.py                   # Train 3D Attention U-Net on Kaggle dataset
-│   ├── predict3d.py                 # Inference with a trained checkpoint
+│   ├── predict.py                   # 2D U-Net inference on a real MRI image
+│   ├── predict3d.py                 # 3D Attention U-Net inference with confidence map
 │   └── test_model.py                # End-to-end verification (dataset → model → viz)
 │
 ├── configs/
@@ -118,6 +120,47 @@ python run.py results
 ```
 
 Runs inference on one sample per tumor type (glioma, meningioma, pituitary), copies training curves, and saves everything to `results/`.
+
+---
+
+## CUDA Setup (GPU Training)
+
+Training on a GPU is 3–10× faster than CPU. If you have an NVIDIA GPU, follow these steps before running `pip install -r requirements.txt`.
+
+### Step 1 — Install NVIDIA drivers
+
+- **Windows:** [nvidia.com/drivers](https://www.nvidia.com/drivers) → select your GPU → download and install
+- **Linux (Ubuntu):** `sudo apt install nvidia-driver-535` (or latest available), then reboot
+
+Verify: `nvidia-smi` — you should see your GPU name and driver version.
+
+### Step 2 — Install CUDA Toolkit
+
+Download from [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads).  
+Select your OS → Architecture → Version. Recommended: **CUDA 12.1**.
+
+Verify: `nvcc --version`
+
+### Step 3 — Install PyTorch with CUDA
+
+Replace the PyTorch line in `requirements.txt` is not needed — instead run:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt
+```
+
+Verify CUDA is available in Python:
+
+```python
+import torch
+print(torch.cuda.is_available())      # True
+print(torch.cuda.get_device_name(0))  # Your GPU name
+```
+
+### CUDA not available?
+
+`run.py train` and `train3d.py` will **automatically fall back to CPU** if CUDA is not detected. Training will be slower but will work. Use `configs/cpu.json` for appropriate settings.
 
 ---
 
