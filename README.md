@@ -61,7 +61,7 @@ Brain-Tumor-Segmentation/
 │   └── samples/                     # Synthetic NIfTI pairs (Option A)
 │
 ├── docs/
-│   └── clinical_context.md          # Why these choices matter in real hospitals
+│   └── ml_design_decisions.md       # Why standard ML assumptions break on MRI data
 │
 ├── pyproject.toml
 ├── requirements.txt
@@ -188,7 +188,7 @@ model = AttentionUNet3D(in_channels=1, num_classes=4, base_filters=32, depth=4)
 | Binary classifier | Multi-class segmentation (WHO tumor types) |
 | Generic datasets | Brain tumor MRI (12K+ clinical images) |
 
-See `docs/clinical_context.md` for the full explanation.
+See `docs/ml_design_decisions.md` for the full explanation.
 
 ---
 
