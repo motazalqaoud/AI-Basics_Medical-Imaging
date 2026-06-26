@@ -1,6 +1,6 @@
 # Clinical Context: Why These Choices Matter
 
-> Written by Motaz Alqaoud, PhD — Biomedical Engineer & Senior AI/ML Engineer at Abbott
+> Written by Motaz Alqaoud, PhD — Biomedical Engineer
 
 Most medical AI tutorials are written by software engineers who've never been inside an OR.
 This document explains the *why* behind the engineering decisions in this repo.
@@ -41,7 +41,7 @@ In medical imaging:
 
 ## 3. Dice Loss, Not Cross-Entropy
 
-In a typical breast MRI slice, a tumor might occupy **0.5% of all pixels**.
+In a typical brain MRI slice, a tumor might occupy **0.5% of all pixels**.
 
 If you train with cross-entropy:
 - Predicting "background" for every pixel gets you **99.5% accuracy**
