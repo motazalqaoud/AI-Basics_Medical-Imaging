@@ -200,7 +200,8 @@ See `docs/clinical_context.md` for the full explanation.
 | `nibabel` | NIfTI file loading |
 | `SimpleITK` | Resampling, registration |
 | `PyTorch` | Deep learning (U-Net, 3D Attention U-Net) |
-| `MONAI` | Medical imaging transforms |
+| `albumentations` | Image augmentation pipeline |
+| `scikit-image` | Morphological ops and image processing |
 | `matplotlib` | Visualization |
 | `numpy` | Array operations |
 
