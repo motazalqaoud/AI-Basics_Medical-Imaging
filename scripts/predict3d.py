@@ -44,14 +44,21 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 from segmentation.unet3d import AttentionUNet3D
 
-# Class label colours (RGBA)
+# Class label colours (RGBA) — 8-class: background + 7 WHO tumor categories
 CLASS_COLORS = {
-    0: None,                    # background — not shown
-    1: [1.0, 0.2, 0.2, 0.6],   # glioma     — red
-    2: [0.2, 1.0, 0.2, 0.6],   # meningioma — green
-    3: [0.2, 0.6, 1.0, 0.6],   # pituitary  — blue
+    0: None,                    # background      — not shown
+    1: [1.0, 0.2, 0.2, 0.6],   # glioma          — red
+    2: [0.2, 1.0, 0.2, 0.6],   # meningioma       — green
+    3: [0.2, 0.6, 1.0, 0.6],   # nerve sheath     — blue
+    4: [1.0, 1.0, 0.2, 0.6],   # embryonic        — yellow
+    5: [1.0, 0.2, 1.0, 0.6],   # mixed neuronal   — magenta
+    6: [0.2, 1.0, 1.0, 0.6],   # mesenchymal      — cyan
+    7: [1.0, 0.6, 0.2, 0.6],   # germ cell        — orange
 }
-CLASS_NAMES = {1: 'Glioma', 2: 'Meningioma', 3: 'Pituitary'}
+CLASS_NAMES = {
+    1: 'Glioma', 2: 'Meningioma', 3: 'Nerve Sheath',
+    4: 'Embryonic', 5: 'Mixed Neuronal', 6: 'Mesenchymal', 7: 'Germ Cell',
+}
 
 
 def load_model(checkpoint_path: str, device: torch.device):

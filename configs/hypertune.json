@@ -13,6 +13,7 @@
   "lr": 0.0005,
   "base-filters": 32,
   "depth": 3,
+  "num-classes": 8,
   "image-size": 96,
   "d-frames": 4,
   "num-workers": 4

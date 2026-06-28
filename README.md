@@ -1,6 +1,6 @@
 # Brain Tumor Segmentation — 3D Attention U-Net
 
-> Multi-class segmentation of glioma, meningioma, and pituitary tumors from MRI using 3D Attention U-Net with WHO-grade classification.
+> 8-class brain tumor segmentation from MRI using 3D Attention U-Net — classifies 7 WHO tumor categories + background from 12K+ real clinical scans.
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red)](https://pytorch.org)
@@ -14,11 +14,11 @@
 This project implements a **clinical-grade pipeline for brain tumor segmentation from MRI**, covering the full stack from raw DICOM/NIfTI loading through 3D volumetric training to multi-class prediction.
 
 **Key capabilities:**
-- Multi-class tumor segmentation: glioma, meningioma, and pituitary (WHO classification)
-- 3D Attention U-Net trained on 12,000+ real MRI scans from Kaggle
-- Anatomy-aware preprocessing: isotropic resampling, percentile normalization, safe augmentation
-- Hybrid loss (Weighted Dice + Focal + Boundary) designed for severe class imbalance
-- Per-class Dice and Hausdorff metrics for quantitative evaluation
+- 8-class segmentation: Glioma, Meningioma, Nerve Sheath, Embryonic, Mixed Neuronal, Mesenchymal, Germ Cell + Background
+- Weakly-supervised training on 12,391 real MRI scans — T1, T1C+, T2 modalities, all loaded
+- 3D Attention U-Net (2.2M params) with SE channel attention + spatial attention gates
+- Hybrid loss (Weighted Dice + Focal + Boundary) with per-class weights for severe imbalance
+- Per-class Mean Tumor Dice tracked for all 7 WHO tumor categories during training and evaluation
 
 Every engineering decision is driven by clinical requirements — voxel spacing, orientation metadata, and correct intensity handling are treated as first-class concerns, not afterthoughts.
 
@@ -119,7 +119,7 @@ Saves `prediction.png` — a 4-panel figure: input MRI / ground truth / predicti
 python run.py results
 ```
 
-Runs inference on one sample per tumor type (glioma, meningioma, pituitary), copies training curves, and saves everything to `results/`.
+Runs inference on one sample per tumor type (all 7 WHO categories), copies training curves, and saves everything to `results/`.
 
 ---
 
@@ -237,9 +237,10 @@ Supports multi-class output for WHO tumor classification.
 ```python
 from src.segmentation import AttentionUNet3D
 
-model = AttentionUNet3D(in_channels=1, num_classes=4, base_filters=32, depth=4)
-# Input: (B, 1, D, H, W)  →  Output: (B, 4, D, H, W) logits
-# Classes: 0=background, 1=glioma, 2=meningioma, 3=pituitary
+model = AttentionUNet3D(in_channels=1, num_classes=8, base_filters=32, depth=4)
+# Input: (B, 1, D, H, W)  →  Output: (B, 8, D, H, W) logits
+# Classes: 0=background, 1=glioma, 2=meningioma, 3=nerve sheath,
+#          4=embryonic, 5=mixed neuronal, 6=mesenchymal, 7=germ cell
 ```
 
 ---
@@ -276,44 +277,47 @@ model = AttentionUNet3D(in_channels=1, num_classes=4, base_filters=32, depth=4)
 `notebooks/03_tumor_segmentation_unet.ipynb`
 
 - Train 2D U-Net on brain MRI images with ground truth masks
-- Multi-class segmentation (glioma, meningioma, pituitary)
-- Evaluate with Dice, Hausdorff distance, and volumetric metrics
+- Multi-class segmentation (8 WHO tumor categories)
+- Evaluate with per-class Dice and volumetric metrics
 
 ---
 
 ## Results
 
-Trained for 50 epochs on CPU using the Kaggle 12K brain tumor dataset (3,577 train / 766 val).
+Trained for 50 epochs on CPU using the full Kaggle Brain Tumor 12K dataset (8,673 train / 1,858 val / 1,860 test), all modalities (T1, T1C+, T2).
 
-### Metrics
+### Training Configuration
 
-| Metric | Value |
+| Parameter | Value |
 |---|---|
-| **Val Dice (best)** | **0.7894** |
-| Train Dice (epoch 50) | 0.9000 |
-| Overfitting gap | 0.11 ✓ (threshold < 0.15) |
-| Background Dice | 0.9948 |
-| Tumor Dice | 0.7196 → 0.7894 (epoch 8 → 50) |
-| Model parameters | 559K |
-| Training time (CPU) | ~6 hours · 50 epochs |
+| Model | 3D Attention U-Net |
+| Parameters | 2.2M |
+| Base filters | 32 |
+| Depth | 2 |
+| Image size | 64×64 |
+| D-frames (pseudo-3D) | 2 |
+| Epochs | 50 |
+| Batch size | 4 |
+| Optimizer | Adam, lr=1e-3 |
+| Scheduler | ReduceLROnPlateau (factor=0.5, patience=5) |
+| Loss | HybridLoss (α=0.5 Dice, β=0.3 Focal, γ=0.2 Boundary) |
+| Classes | 8 (background + 7 WHO tumor categories) |
+| Dataset split | 70% train / 15% val / 15% test |
+| Hardware | CPU (~15 min/epoch) |
 
 ### Training Curves
 
 ![Training Curves](results/training_curves.png)
 
-Val Dice climbs steadily from 0.51 → 0.79 with no catastrophic overfitting. The train/val gap stays at 0.11 — below the 0.15 warning threshold throughout.
-
-### Validation Sample (Epoch 50)
+### Validation Sample
 
 ![Epoch 50 Validation](results/epoch50_validation.png)
-
-Ground truth (top right) vs prediction (bottom left). Errors are confined to the tumor boundary — the model correctly localises the tumor region without scatter false positives.
 
 ### Inference on Unseen Image
 
 ![Glioma Inference](results/glioma_prediction.png)
 
-Output from `predict3d.py`: input MRI / tumor prediction overlay / confidence map. The model correctly identifies the tumor in the frontal lobe with high confidence on the surrounding tissue.
+Output from `predict3d.py`: input MRI / tumor prediction overlay / confidence map (colour-coded per WHO class).
 
 ---
 
@@ -362,14 +366,17 @@ See `docs/design_decisions.md` for the full explanation.
 
 ## Roadmap
 
-- [x] Load brain tumor MRI dataset (Kaggle 12K)
+- [x] Load brain tumor MRI dataset (Kaggle 12K — all modalities T1/T1C+/T2)
 - [x] Preprocessing pipeline for T1/T2 weighted images
 - [x] 2D U-Net segmentation with binary tumor mask
-- [x] 3D Attention U-Net with multi-class output
-- [x] Hybrid loss (Weighted Dice + Focal + Boundary)
-- [x] Kaggle dataset loader with train/val/test split
+- [x] 3D Attention U-Net with 8-class output (background + 7 WHO categories)
+- [x] Hybrid loss (Weighted Dice + Focal + Boundary) with per-class weights
+- [x] Weakly-supervised pseudo-labels from folder-level annotations
+- [x] Kaggle dataset loader with train/val/test split (70/15/15)
+- [x] Resume training with full optimizer + scheduler state
+- [x] Per-class Dice tracking for all 7 tumor categories
+- [x] Automatic test-set evaluation after training
 - [x] 3D visualization and training curve plots
-- [ ] Evaluate on full Kaggle test set with per-class metrics
 - [ ] BraTS integration and cross-dataset validation
 - [ ] Web interface for tumor detection (Gradio)
 - [ ] ONNX export for deployment

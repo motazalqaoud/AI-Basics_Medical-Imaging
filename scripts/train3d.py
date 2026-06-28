@@ -66,22 +66,12 @@ def resolve_data_root(root_dir: str) -> str:
 
 
 def create_dataloaders(data_root: str, batch_size: int, num_workers: int = 0):
-    """Create train/val dataloaders."""
+    """Create train / val / test dataloaders."""
     logger.info("Loading datasets...")
 
-    train_ds = BrainTumorDataset(
-        root_dir=data_root,
-        modality='T1c',
-        split='train',
-        mode='slice'
-    )
-
-    val_ds = BrainTumorDataset(
-        root_dir=data_root,
-        modality='T1c',
-        split='val',
-        mode='slice'
-    )
+    train_ds = BrainTumorDataset(root_dir=data_root, modality='all', split='train', mode='slice')
+    val_ds   = BrainTumorDataset(root_dir=data_root, modality='all', split='val',   mode='slice')
+    test_ds  = BrainTumorDataset(root_dir=data_root, modality='all', split='test',  mode='slice')
 
     train_loader = DataLoader(
         train_ds,
@@ -99,98 +89,114 @@ def create_dataloaders(data_root: str, batch_size: int, num_workers: int = 0):
         pin_memory=False
     )
 
-    logger.info(f"Train set: {len(train_ds)} samples")
-    logger.info(f"Val set: {len(val_ds)} samples")
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False
+    )
 
-    return train_loader, val_loader
+    logger.info(f"Train set: {len(train_ds)} samples")
+    logger.info(f"Val set:   {len(val_ds)} samples")
+    logger.info(f"Test set:  {len(test_ds)} samples")
+
+    return train_loader, val_loader, test_loader
+
+
+TUMOR_CLASSES = [1, 2, 3, 4, 5, 6, 7]  # all tumor classes — excludes background (0)
+CLASS_NAMES   = {
+    1: 'Glioma',
+    2: 'Meningioma',
+    3: 'Nerve Sheath',
+    4: 'Embryonic',
+    5: 'Mixed Neuronal',
+    6: 'Mesenchymal',
+    7: 'Germ Cell',
+}
+
+
+def _mean_tumor_dice(class_dice_means: dict) -> float:
+    """Mean Dice across tumor classes (1, 2, 3) — excludes background."""
+    return float(np.mean([class_dice_means[c] for c in TUMOR_CLASSES]))
 
 
 def train_epoch(model, loader, criterion, optimizer, device, image_size=64):
-    """Train for one epoch. Returns (avg_loss, avg_glioma_dice)."""
+    """Train for one epoch. Returns (avg_loss, class_dice_means, mean_tumor_dice)."""
     model.train()
     total_loss = 0.0
-    total_dice = 0.0
+    class_totals = {c: 0.0 for c in TUMOR_CLASSES}
 
     for batch_idx, batch in enumerate(loader):
-        images = batch['image'].to(device)  # (B, 1, H, W)
-        masks = batch['mask'].to(device)    # (B, H, W)
+        images = batch['image'].to(device)
+        masks  = batch['mask'].to(device)
 
-        # Resize to target spatial size (cheap on CPU, big speedup)
         images = F.interpolate(images, size=(image_size, image_size),
                                mode='bilinear', align_corners=False)
-        masks = F.interpolate(masks.unsqueeze(1).float(), size=(image_size, image_size),
-                              mode='nearest').squeeze(1).long()
+        masks  = F.interpolate(masks.unsqueeze(1).float(), size=(image_size, image_size),
+                               mode='nearest').squeeze(1).long()
 
-        # Convert 2D to 3D by stacking frames (pseudo-3D)
         images = images.unsqueeze(2).repeat(1, 1, D_FRAMES, 1, 1)
-        masks = masks.unsqueeze(1).repeat(1, D_FRAMES, 1, 1)
+        masks  = masks.unsqueeze(1).repeat(1, D_FRAMES, 1, 1)
 
-        # Forward pass
         optimizer.zero_grad()
         logits = model(images)
-        loss = criterion(logits, masks)
-
-        # Backward pass
+        loss   = criterion(logits, masks)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item()
-        # Track glioma Dice (class 1) during training to monitor overfitting
         with torch.no_grad():
             preds = torch.argmax(logits, dim=1)
-            total_dice += dice_score(preds, masks, class_idx=1)
+            for c in TUMOR_CLASSES:
+                class_totals[c] += dice_score(preds, masks, class_idx=c)
 
         if (batch_idx + 1) % 10 == 0:
             n = batch_idx + 1
-            logger.info(f"  Batch [{n}/{len(loader)}] Loss: {total_loss/n:.4f} | Train Dice: {total_dice/n:.4f}")
-    
-    return total_loss / len(loader), total_dice / len(loader)
+            avg_tumor = np.mean([class_totals[c] / n for c in TUMOR_CLASSES])
+            logger.info(f"  Batch [{n}/{len(loader)}] Loss: {total_loss/n:.4f} | "
+                        f"Tumor Dice: {avg_tumor:.4f}")
+
+    n = len(loader)
+    class_dice_means = {c: class_totals[c] / n for c in TUMOR_CLASSES}
+    return total_loss / n, class_dice_means, _mean_tumor_dice(class_dice_means)
 
 
-def validate(model, loader, criterion, device, num_classes=4, image_size=64):
-    """Validate on validation set."""
+def evaluate(model, loader, criterion, device, num_classes=8, image_size=64, split='val'):
+    """Run evaluation on any split. Returns (avg_loss, class_dice_means, mean_tumor_dice)."""
     model.eval()
     total_loss = 0.0
-    total_dice = 0.0
     class_dices = {i: [] for i in range(num_classes)}
 
     with torch.no_grad():
         for batch in loader:
-            images = batch['image'].to(device)  # (B, 1, H, W)
-            masks = batch['mask'].to(device)    # (B, H, W)
+            images = batch['image'].to(device)
+            masks  = batch['mask'].to(device)
 
             images = F.interpolate(images, size=(image_size, image_size),
                                    mode='bilinear', align_corners=False)
-            masks = F.interpolate(masks.unsqueeze(1).float(), size=(image_size, image_size),
-                                  mode='nearest').squeeze(1).long()
+            masks  = F.interpolate(masks.unsqueeze(1).float(), size=(image_size, image_size),
+                                   mode='nearest').squeeze(1).long()
 
-            # Convert 2D to 3D
             images = images.unsqueeze(2).repeat(1, 1, D_FRAMES, 1, 1)
-            masks = masks.unsqueeze(1).repeat(1, D_FRAMES, 1, 1)
-            
+            masks  = masks.unsqueeze(1).repeat(1, D_FRAMES, 1, 1)
+
             logits = model(images)
-            loss = criterion(logits, masks)
-            
-            # Compute metrics
-            preds = torch.argmax(logits, dim=1)
-            
+            loss   = criterion(logits, masks)
+            preds  = torch.argmax(logits, dim=1)
+
             total_loss += loss.item()
-            
-            # Per-class Dice
-            for class_id in range(num_classes):
-                batch_dice = dice_score(preds, masks, class_id)
-                class_dices[class_id].append(batch_dice)
-            
-            # Overall Dice
-            total_dice += class_dices[1][-1]  # Use tumor class (class 1)
-    
-    avg_loss = total_loss / len(loader)
-    avg_dice = total_dice / len(loader)
-    
-    class_dice_means = {c: np.mean(dices) for c, dices in class_dices.items()}
-    
-    return avg_loss, avg_dice, class_dice_means
+            for c in range(num_classes):
+                class_dices[c].append(dice_score(preds, masks, class_idx=c))
+
+    class_dice_means = {c: float(np.mean(v)) for c, v in class_dices.items()}
+    mean_tumor       = _mean_tumor_dice(class_dice_means)
+    return total_loss / len(loader), class_dice_means, mean_tumor
+
+
+def validate(model, loader, criterion, device, num_classes=8, image_size=64):
+    return evaluate(model, loader, criterion, device, num_classes, image_size, split='val')
 
 
 def main():
@@ -206,7 +212,7 @@ def main():
     parser.add_argument('--viz-dir', default='visualizations')
     parser.add_argument('--base-filters', type=int, default=32)
     parser.add_argument('--depth', type=int, default=3)
-    parser.add_argument('--num-classes', type=int, default=4)
+    parser.add_argument('--num-classes', type=int, default=8)
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint file to resume training from')
     parser.add_argument('--num-workers', type=int, default=0,
@@ -248,7 +254,7 @@ def main():
 
     # Create dataloaders
     data_root = resolve_data_root(args.data_root)
-    train_loader, val_loader = create_dataloaders(
+    train_loader, val_loader, test_loader = create_dataloaders(
         data_root,
         batch_size=args.batch,
         num_workers=args.num_workers
@@ -268,12 +274,19 @@ def main():
     logger.info(f"Model parameters: {num_params:,}")
     
     # Loss and optimizer
+    # Class weights: inversely proportional to image count per category.
+    # bg=0.01 (trivially easy), rare classes (Germ Cell, Mesenchymal) weighted highest.
+    _weights_by_classes = {
+        3: [0.01, 0.60, 0.39],
+        4: [0.01, 0.40, 0.30, 0.29],
+        8: [0.01, 0.18, 0.18, 0.15, 0.14, 0.14, 0.11, 0.09],
+    }
     criterion = HybridLoss(
         num_classes=args.num_classes,
         alpha=0.5,
         beta=0.3,
         gamma=0.2,
-        dice_weights=[0.01, 0.4, 0.3, 0.29] if args.num_classes == 4 else None
+        dice_weights=_weights_by_classes.get(args.num_classes)
     )
     
     optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
@@ -292,19 +305,21 @@ def main():
         if not resume_path.exists():
             raise FileNotFoundError(f"Resume checkpoint not found: {resume_path}")
 
-        checkpoint = torch.load(resume_path, map_location=device)
+        checkpoint = torch.load(resume_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         if 'optimizer_state_dict' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if 'scheduler_state_dict' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         best_val_dice = float(checkpoint.get('val_dice', 0.0))
-        start_epoch = int(checkpoint.get('epoch', 0)) + 1
-        logger.info(f"Resuming training from checkpoint: {resume_path}")
-        logger.info(f"Loaded checkpoint from epoch {start_epoch - 1}, best val dice {best_val_dice:.4f}")
+        start_epoch   = int(checkpoint.get('epoch', 0)) + 1
+        logger.info(f"Resuming from checkpoint: {resume_path}")
+        logger.info(f"  Epoch {start_epoch - 1} | best val dice {best_val_dice:.4f}")
 
         if start_epoch > args.epochs:
             raise ValueError(
-                f"Checkpoint epoch {start_epoch - 1} is already >= requested total epochs {args.epochs}. "
-                "Use a larger --epochs value to continue training."
+                f"Checkpoint epoch {start_epoch - 1} >= requested total {args.epochs}. "
+                "Pass a larger --epochs value to continue training."
             )
 
     # Model config — saved in every checkpoint so predict3d.py can rebuild the model
@@ -329,62 +344,61 @@ def main():
         logger.info(f"{'='*60}")
         
         # Train
-        train_loss, train_dice = train_epoch(model, train_loader, criterion, optimizer, device, args.image_size)
+        train_loss, train_class_dices, train_mean = train_epoch(
+            model, train_loader, criterion, optimizer, device, args.image_size)
         train_losses.append(train_loss)
-        train_dices.append(train_dice)
+        train_dices.append(train_mean)
 
         # Validate
-        val_loss, val_dice, class_dices = validate(model, val_loader, criterion, device,
-                                                   image_size=args.image_size)
+        val_loss, val_class_dices, val_mean = validate(
+            model, val_loader, criterion, device,
+            num_classes=args.num_classes, image_size=args.image_size)
         val_losses.append(val_loss)
-        val_dices.append(val_dice)
+        val_dices.append(val_mean)
 
-        logger.info(f"Train Loss: {train_loss:.4f} | Train Dice: {train_dice:.4f}")
-        logger.info(f"Val   Loss: {val_loss:.4f} | Val   Dice: {val_dice:.4f}")
-        gap = train_dice - val_dice
-        if gap > 0.15:
-            logger.warning(f"Overfit gap = {gap:.3f} (train-val Dice) — consider regularization")
-        logger.info(f"Per-class Dice: {class_dices}")
-        
+        # ── Epoch summary ──────────────────────────────────────────────
+        def _class_str(dices):
+            return ' | '.join(f"{CLASS_NAMES[c]}: {dices[c]:.4f}" for c in TUMOR_CLASSES)
+
+        logger.info(f"Train Loss: {train_loss:.4f} | Mean Tumor Dice: {train_mean:.4f}")
+        logger.info(f"  {_class_str(train_class_dices)}")
+        logger.info(f"Val   Loss: {val_loss:.4f} | Mean Tumor Dice: {val_mean:.4f}")
+        logger.info(f"  {_class_str(val_class_dices)} | Background: {val_class_dices[0]:.4f}")
+
         # Scheduler step
         scheduler.step(val_loss)
-        
-        # Save best checkpoint
-        if val_dice > best_val_dice:
-            best_val_dice = val_dice
-            ckpt_path = ckpt_dir / f'best_model_dice_{val_dice:.4f}.pt'
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'val_dice': val_dice,
-                'val_loss': val_loss,
-                'train_loss': train_loss,
-                'model_config': model_config,
-            }, ckpt_path)
-            logger.info(f"✓ Saved best checkpoint: {ckpt_path}")
 
-        # Save latest checkpoint every epoch (safe resume point after any shutdown)
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'val_dice': val_dice,
-            'val_loss': val_loss,
-            'train_loss': train_loss,
-            'model_config': model_config,
-        }, ckpt_dir / 'checkpoint_latest.pt')
+        def _make_ckpt(extra=None):
+            d = {
+                'epoch':                epoch,
+                'model_state_dict':     model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'val_dice':             val_mean,
+                'val_class_dices':      val_class_dices,
+                'val_loss':             val_loss,
+                'train_loss':           train_loss,
+                'model_config':         model_config,
+            }
+            if extra:
+                d.update(extra)
+            return d
+
+        # Save best checkpoint
+        if val_mean > best_val_dice:
+            best_val_dice = val_mean
+            ckpt_path = ckpt_dir / f'best_model_dice_{val_mean:.4f}.pt'
+            torch.save(_make_ckpt(), ckpt_path)
+            logger.info(f"✓ New best checkpoint: {ckpt_path}")
+
+        # Save latest checkpoint every epoch (resume point after any shutdown)
+        torch.save(_make_ckpt(), ckpt_dir / 'checkpoint_latest.pt')
         logger.info(f"✓ Saved latest checkpoint (epoch {epoch})")
 
-        # Save periodic checkpoint
+        # Periodic checkpoint every 10 epochs
         if epoch % 10 == 0:
             ckpt_path = ckpt_dir / f'checkpoint_epoch_{epoch}.pt'
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'val_dice': val_dice,
-                'model_config': model_config,
-            }, ckpt_path)
+            torch.save(_make_ckpt(), ckpt_path)
             logger.info(f"✓ Saved periodic checkpoint: {ckpt_path}")
         
         # Visualize predictions on validation set
@@ -437,11 +451,38 @@ def main():
     logger.info(f"Training curves saved to: {viz_dir / 'training_curves.png'}")
 
     logger.info(f"\n{'='*60}")
-    logger.info(f"Training complete!")
-    logger.info(f"Best Val Dice: {best_val_dice:.4f}")
+    logger.info(f"Training complete! Best Val Mean Tumor Dice: {best_val_dice:.4f}")
+    logger.info(f"{'='*60}")
+
+    # ── Test set evaluation ────────────────────────────────────────────
+    logger.info("\nLoading best checkpoint for test set evaluation...")
+    best_ckpts = sorted(ckpt_dir.glob('best_model_dice_*.pt'),
+                        key=lambda p: float(p.stem.split('_')[-1]), reverse=True)
+    if best_ckpts:
+        best_ckpt = best_ckpts[0]
+        ckpt_data = torch.load(best_ckpt, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt_data['model_state_dict'])
+        logger.info(f"Loaded: {best_ckpt.name}")
+
+    logger.info("Running test set evaluation...")
+    test_loss, test_class_dices, test_mean = evaluate(
+        model, test_loader, criterion, device,
+        num_classes=args.num_classes, image_size=args.image_size, split='test')
+
+    per_class_str = ' | '.join(
+        f"{CLASS_NAMES[c]}: {test_class_dices[c]:.4f}" for c in TUMOR_CLASSES
+    )
+    logger.info(f"\n{'='*60}")
+    logger.info("TEST SET RESULTS")
+    logger.info(f"{'='*60}")
+    logger.info(f"Mean Tumor Dice: {test_mean:.4f}")
+    logger.info(f"  {per_class_str}")
+    logger.info(f"Background Dice: {test_class_dices[0]:.4f}")
+    logger.info(f"Test Loss      : {test_loss:.4f}")
+    logger.info(f"{'='*60}")
+
     logger.info(f"Checkpoints saved to: {ckpt_dir}")
     logger.info(f"Visualizations saved to: {viz_dir}")
-    logger.info(f"{'='*60}")
 
 
 if __name__ == '__main__':

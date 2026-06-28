@@ -231,12 +231,18 @@ def cmd_predict(args):
         if args.mask:
             cmd += ["--mask", args.mask]
     else:
-        # Try to find a real image from the dataset
-        for tumor_type in ["Glioma", "Meningioma", "Pituitary"]:
-            img, mask = find_sample_image(tumor_type)
+        # Try to find a real image from the dataset (actual folder names)
+        for folder_name, display_name in [
+            ("Gliomas", "Glioma"), ("Meningothelial Tumors", "Meningioma"),
+            ("Nerve Sheath Tumors", "Nerve Sheath"), ("Embryonic Tumors", "Embryonic"),
+            ("Mixed Neuronal and Neuronal-Glial Tumors", "Mixed Neuronal"),
+            ("Mesenchymal (Non-Meningothelial Tumors)", "Mesenchymal"),
+            ("Germ Cell Tumors", "Germ Cell"),
+        ]:
+            img, mask = find_sample_image(folder_name)
             if img:
                 cmd += ["--image", str(img), "--mask", str(mask)]
-                print(f"Using: {img.name} ({tumor_type})")
+                print(f"Using: {img.name} ({display_name})")
                 break
         else:
             print("No dataset found — running with synthetic demo input.")
@@ -256,15 +262,26 @@ def cmd_results(args):
 
     RESULTS.mkdir(exist_ok=True)
 
+    # Actual folder names in the dataset → display name and output filename
+    TUMOR_FOLDERS = [
+        ("Gliomas",                                    "Glioma",          "glioma"),
+        ("Meningothelial Tumors",                      "Meningioma",      "meningioma"),
+        ("Nerve Sheath Tumors",                        "Nerve Sheath",    "nerve_sheath"),
+        ("Embryonic Tumors",                           "Embryonic",       "embryonic"),
+        ("Mixed Neuronal and Neuronal-Glial Tumors",   "Mixed Neuronal",  "mixed_neuronal"),
+        ("Mesenchymal (Non-Meningothelial Tumors)",    "Mesenchymal",     "mesenchymal"),
+        ("Germ Cell Tumors",                           "Germ Cell",       "germ_cell"),
+    ]
+
     generated = []
-    for tumor_type in ["Glioma", "Meningioma", "Pituitary"]:
-        img, mask = find_sample_image(tumor_type)
+    for folder_name, display_name, out_stem in TUMOR_FOLDERS:
+        img, mask = find_sample_image(folder_name)
         if img is None:
-            print(f"  WARNING: No {tumor_type} sample found — skipping")
+            print(f"  WARNING: No {display_name} sample found — skipping")
             continue
 
-        out = RESULTS / f"{tumor_type.lower()}_prediction.png"
-        print(f"\nGenerating {tumor_type} prediction...")
+        out = RESULTS / f"{out_stem}_prediction.png"
+        print(f"\nGenerating {display_name} prediction...")
         run([
             sys.executable, str(SCRIPTS / "predict3d.py"),
             "--checkpoint", str(checkpoint),
@@ -272,7 +289,7 @@ def cmd_results(args):
             "--mask", str(mask),
             "--out", str(out),
         ])
-        generated.append((tumor_type, out))
+        generated.append((display_name, out))
 
     # Copy training curves if they exist
     curves_src = ROOT / "visualizations" / "training_curves.png"

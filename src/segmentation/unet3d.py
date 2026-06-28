@@ -226,20 +226,20 @@ class AttentionUNet3D(nn.Module):
     - 3D volumetric processing (preserves spatial context)
     - Residual conv blocks with channel attention
     - Spatial attention gates in decoder
-    - Multi-class output (background, glioma, meningioma, pituitary, etc.)
-    
+    - Multi-class output: background + 7 WHO tumor categories (8 classes total)
+
     Args:
-        in_channels: input channels (1 for single MRI modality, 3 for T1/T2/T1c)
-        num_classes: number of output classes (4 for WHO classification)
+        in_channels: input channels (1 for single MRI modality)
+        num_classes: number of output classes (8 = background + 7 WHO tumor categories)
         base_filters: initial number of filters (doubled each level)
         depth: number of encoder levels (default 4 = 8x8x8 bottleneck)
         dropout: dropout rate in encoder
-        
+
     Example:
-        >>> model = AttentionUNet3D(in_channels=1, num_classes=4)
-        >>> x = torch.randn(2, 1, 128, 128, 128)
+        >>> model = AttentionUNet3D(in_channels=1, num_classes=8)
+        >>> x = torch.randn(2, 1, 4, 64, 64)
         >>> out = model(x)
-        >>> print(out.shape)  # (2, 4, 128, 128, 128)
+        >>> print(out.shape)  # (2, 8, 4, 64, 64)
     """
     
     def __init__(self,
@@ -338,7 +338,7 @@ class AttentionUNet3D(nn.Module):
 
 if __name__ == "__main__":
     # Test
-    model = AttentionUNet3D(in_channels=1, num_classes=4, base_filters=32, depth=4)
+    model = AttentionUNet3D(in_channels=1, num_classes=8, base_filters=32, depth=4)
     print(f"Model parameters: {model.count_parameters():,}")
     
     x = torch.randn(2, 1, 128, 128, 128)
