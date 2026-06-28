@@ -1,6 +1,6 @@
 # Data
 
-## Option A — Kaggle Brain Tumor Dataset (12K+ images) ⭐ PRIMARY
+## Kaggle Brain Tumor Dataset (12K+ images)
 
 Download via the Kaggle API:
 
@@ -17,20 +17,25 @@ Dataset contents:
 - 12,000+ T1/T2-weighted MRI brain slices
 - Tumor segmentation masks (consensus ground truth)
 - Bounding boxes and per-image JSON metadata
-- Tumor types: Glioma, Meningioma, Pituitary
+- Tumor types: Gliomas, Meningothelial Tumors, Germ Cell Tumors, and more
 
 After unzipping, the folder layout should look like:
 
 ```
-data/raw/Images_/
-├── Glioma/
-│   └── T1C+/
-│       └── [subtype]/
-│           ├── image.jpg
-│           ├── image_mask_consensus.png
-│           └── image_meta.json
-├── Meningioma/
-└── Pituitary/
+data/raw/Images_/Images_/
+├── Gliomas/
+│   ├── Gliomas T1C+/
+│   │   └── [subtype]/
+│   │       ├── image.jpg
+│   │       ├── image_mask_consensus.png
+│   │       └── image_meta.json
+│   ├── Gliomas T1/
+│   └── Gliomas T2/
+├── Meningothelial Tumors/
+├── Germ Cell Tumors/
+├── Embryonic Tumors/
+├── Nerve Sheath Tumors/
+└── Normal/
 ```
 
 Verify the setup end-to-end before training:
@@ -39,16 +44,13 @@ Verify the setup end-to-end before training:
 python scripts/test_model.py --data-root data/raw/Images_
 ```
 
-## Option B — Synthetic data (no download required)
+Or use the automated setup which handles everything:
 
 ```bash
-python scripts/generate_sample_data.py --n 20 --size 128
+python run.py setup
 ```
 
-Writes NIfTI image/mask pairs into `data/samples/`. Good for testing the full pipeline
-without downloading real data.
-
-## Option C — Additional public datasets
+## Additional public datasets
 
 | Dataset | What | Link |
 |---|---|---|
@@ -67,6 +69,5 @@ volume, meta = load_dicom_series("data/raw/patient_01/")
 
 ```
 data/
-├── samples/   # synthetic NIfTI pairs from Option B (gitignored)
 └── raw/       # real datasets — gitignored
 ```

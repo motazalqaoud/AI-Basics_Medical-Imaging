@@ -139,10 +139,11 @@ def train_epoch(model, loader, criterion, optimizer, device, image_size=64):
         # Track glioma Dice (class 1) during training to monitor overfitting
         with torch.no_grad():
             preds = torch.argmax(logits, dim=1)
-            total_dice += dice_score(preds, masks, class_id=1)
+            total_dice += dice_score(preds, masks, class_idx=1)
 
         if (batch_idx + 1) % 10 == 0:
-            logger.info(f"  Batch [{batch_idx+1}/{len(loader)}] Loss: {loss.item():.4f}")
+            n = batch_idx + 1
+            logger.info(f"  Batch [{n}/{len(loader)}] Loss: {total_loss/n:.4f} | Train Dice: {total_dice/n:.4f}")
     
     return total_loss / len(loader), total_dice / len(loader)
 
@@ -193,6 +194,7 @@ def validate(model, loader, criterion, device, num_classes=4, image_size=64):
 
 
 def main():
+    global D_FRAMES  # may be overridden by --d-frames or --config
     parser = argparse.ArgumentParser(description='Train 3D Attention U-Net')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch', type=int, default=4)
@@ -231,7 +233,6 @@ def main():
                 logger.warning(f"Config key '{key}' is not a known argument — skipping")
 
     # Apply d_frames from args (may have been overridden by config)
-    global D_FRAMES
     D_FRAMES = args.d_frames
 
     # Setup

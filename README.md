@@ -281,6 +281,42 @@ model = AttentionUNet3D(in_channels=1, num_classes=4, base_filters=32, depth=4)
 
 ---
 
+## Results
+
+Trained for 50 epochs on CPU using the Kaggle 12K brain tumor dataset (3,577 train / 766 val).
+
+### Metrics
+
+| Metric | Value |
+|---|---|
+| **Val Dice (best)** | **0.7894** |
+| Train Dice (epoch 50) | 0.9000 |
+| Overfitting gap | 0.11 ✓ (threshold < 0.15) |
+| Background Dice | 0.9948 |
+| Tumor Dice | 0.7196 → 0.7894 (epoch 8 → 50) |
+| Model parameters | 559K |
+| Training time (CPU) | ~6 hours · 50 epochs |
+
+### Training Curves
+
+![Training Curves](results/training_curves.png)
+
+Val Dice climbs steadily from 0.51 → 0.79 with no catastrophic overfitting. The train/val gap stays at 0.11 — below the 0.15 warning threshold throughout.
+
+### Validation Sample (Epoch 50)
+
+![Epoch 50 Validation](results/epoch50_validation.png)
+
+Ground truth (top right) vs prediction (bottom left). Errors are confined to the tumor boundary — the model correctly localises the tumor region without scatter false positives.
+
+### Inference on Unseen Image
+
+![Glioma Inference](results/glioma_prediction.png)
+
+Output from `predict3d.py`: input MRI / tumor prediction overlay / confidence map. The model correctly identifies the tumor in the frontal lobe with high confidence on the surrounding tissue.
+
+---
+
 ## Clinical Context
 
 > Most medical AI tutorials miss the clinical reality. Here's what's different about this repo:

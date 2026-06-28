@@ -77,7 +77,8 @@ def load_model(checkpoint_path: str, device: torch.device):
 
     epoch    = ckpt.get('epoch', '?')
     val_dice = ckpt.get('val_dice', '?')
-    print(f"Loaded checkpoint  epoch={epoch}  val_dice={val_dice:.4f if isinstance(val_dice, float) else val_dice}")
+    val_dice_str = f"{val_dice:.4f}" if isinstance(val_dice, float) else str(val_dice)
+    print(f"Loaded checkpoint  epoch={epoch}  val_dice={val_dice_str}")
     print(f"Model config: base_filters={base_filters}, depth={depth}, "
           f"num_classes={num_classes}, image_size={image_size}, d_frames={d_frames}")
 
